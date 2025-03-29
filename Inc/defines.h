@@ -174,15 +174,34 @@
 #endif
 
 #if defined(SUPPORT_BUTTONS_LEFT)
-#define BUTTON1_PIN         GPIO_PIN_2
-#define BUTTON1_PORT        GPIOA
-#define BUTTON2_PIN         GPIO_PIN_3
-#define BUTTON2_PORT        GPIOA
+  #define BUTTON1_PIN         GPIO_PIN_2
+  #define BUTTON1_PORT        GPIOA
+  #define BUTTON2_PIN         GPIO_PIN_3
+  #define BUTTON2_PORT        GPIOA
 #elif defined(SUPPORT_BUTTONS_RIGHT)
-#define BUTTON1_PIN         GPIO_PIN_10
-#define BUTTON1_PORT        GPIOB
-#define BUTTON2_PIN         GPIO_PIN_11
-#define BUTTON2_PORT        GPIOB
+  #define BUTTON1_PIN         GPIO_PIN_10
+  #define BUTTON1_PORT        GPIOB
+  #define BUTTON2_PIN         GPIO_PIN_11
+  #define BUTTON2_PORT        GPIOB
+// #else 
+//   #if defined(REVERSE_DRIVE_SWITCH)
+//     #define REVERSE_BUTTON_PIN   GPIO_PIN_11
+//     #define REVERSE_BUTTON_PORT  GPIOB
+//   #endif
+//   #if defined(FORWARD_DRIVE_SWITCH)
+//     #define FORWARD_BUTTON_PIN   GPIO_PIN_10
+//     #define FORWARD_BUTTON_PORT  GPIOB
+//   #endif
+#endif
+
+#if defined (SUPPORT_REAR_LAMP)
+  #define REAR_LAMP_PIN   GPIO_PIN_10
+  #define REAR_LAMP_PORT  GPIOB
+#endif
+
+#if defined (SUPPORT_ODOMETER)
+  #define ODOMETER_PIN   GPIO_PIN_11
+  #define ODOMETER_PORT  GPIOB 
 #endif
 
 #define DELAY_TIM_FREQUENCY_US 1000000
@@ -203,6 +222,7 @@
 #define SIGN(a) (((a) < 0) ? (-1) : (((a) > 0) ? (1) : (0)))
 #define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
 #define IN_RANGE(x, low, high) (((x) >= (low)) && ((x) <= (high)))
+#define OUT_OF_RANGE(x, low, high) (((x) < (low)) || ((x) > (high)))
 #define SCALE(value, high, max) MIN(MAX(((max) - (value)) / ((max) - (high)), 0.0f), 1.0f)
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
@@ -213,6 +233,12 @@
 
 #if defined(PRINTF_FLOAT_SUPPORT) && (defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)) && defined(__GNUC__)
     asm(".global _printf_float");     // this is the magic trick for printf to support float. Warning: It will increase code considerably! Better to avoid!
+#endif
+
+#if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
+  #define PRINTF(f_, ...) do { printf((f_), ##__VA_ARGS__); } while(0)
+#else
+  #define PRINTF(...)
 #endif
 
 

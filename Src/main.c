@@ -162,6 +162,99 @@ static uint32_t    buzzerTimer_prev = 0;
 static uint32_t    inactivity_timeout_counter;
 static MultipleTap MultipleTapBrake;    // define multiple tap functionality for the Brake pedal
 
+void powerOn(void)
+{
+  poweronMelody();
+  HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
+  
+#ifdef KEYLOCK_POWER_SWITCH
+  uint16_t power_btn_hold_time = 0;
+
+  // power on button short press
+  while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) 
+    && power_btn_hold_time++ < KEYLOCK_CHECK_TIME) 
+  { 
+    HAL_Delay(WAIT_DELAY); 
+  }
+
+  // check for first short press
+  if (power_btn_hold_time < KEYLOCK_CHECK_TIME) 
+  {
+    power_btn_hold_time = 0;
+    while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) 
+      && power_btn_hold_time++ < KEYLOCK_CHECK_TIME) 
+    { 
+      HAL_Delay(WAIT_DELAY); 
+    }
+
+    // second short press
+    if (power_btn_hold_time < KEYLOCK_CHECK_TIME) 
+    {
+      uint16_t calibrate_timeout = 0;
+      PRINTF("calibrate mode, press power button for more than 5 sec\r\n");
+      while (true) 
+      {
+        power_btn_hold_time = 0;
+        // check for long press
+        while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) 
+        {
+          HAL_Delay(WAIT_DELAY);
+          if (power_btn_hold_time++ == CALIBRATE_HOLD_TIME) { beepShort(5); }
+        }
+        if (power_btn_hold_time >= CALIBRATE_HOLD_TIME) 
+        {        
+          calibrate();
+          powerOff(); 
+        }
+        else if (power_btn_hold_time > PWR_BTN_DEBOUNCE) 
+        { 
+          // Short press: power off (80 ms debounce)
+          powerOff();  
+        }
+
+        if (calibrate_timeout++ > CALIBRATE_MOD_IMEOUT_TIME) 
+        {
+          // timout for calibration
+          PRINTF("Calibrate mode timeout\r\n");
+          break;
+        }
+        
+        HAL_Delay(WAIT_DELAY);
+      }
+    }
+  }
+#else
+  // Loop until button is released
+  while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }
+#endif
+}
+
+void motorsEnable(void)
+{
+  // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
+  if (enable == 0 && (!rtY_Left.z_errCode && !rtY_Right.z_errCode) && (input1[inIdx].cmd > -50 && input1[inIdx].cmd < 50) && (input2[inIdx].cmd > -50 && input2[inIdx].cmd < 50)){
+    beepShort(6);                     // make 2 beeps indicating the motor enable
+    beepShort(4);
+    HAL_Delay(100);
+    steerFixdt = speedFixdt = 0;      // reset filters
+    enable = 1;                       // enable motors
+    PRINTF("-- Motors enabled --\r\n");
+  }
+}
+
+void motorsDisable(void)
+{
+  // ####### MOTOR DISABLING: Only if the initial input is very small (for SAFETY) #######
+  if (enable == 1 && (!rtY_Left.z_errCode && !rtY_Right.z_errCode) && (input1[inIdx].cmd > -50 && input1[inIdx].cmd < 50) && (input2[inIdx].cmd > -50 && input2[inIdx].cmd < 50)){
+    beepShort(4);
+    beepShort(6);                     // make 2 beeps indicating the motor enable
+    HAL_Delay(100);
+    enable = 0;                       // enable motors
+    PRINTF("-- Motors disabled --\r\n");
+  }
+}
+
+
 int main(void) {
 
   HAL_Init();
@@ -199,32 +292,42 @@ int main(void) {
   HAL_ADC_Start(&hadc1);
   HAL_ADC_Start(&hadc2);
 
-  poweronMelody();
-  HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
-  
   int32_t board_temp_adcFixdt = adc_buffer.temp << 16;  // Fixed-point filter output initialized with current ADC converted to fixed-point
   int16_t board_temp_adcFilt  = adc_buffer.temp;
 
-  // Loop until button is released
-  while(HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(10); }
+  #if (defined(FORWARD_DRIVE_SWITCH) || defined(REVERSE_DRIVE_SWITCH))
+    uint16_t reverse_btn_hold_time = 0;
+    uint16_t forward_btn_hold_time = 0;
+
+    #if defined (NEUTRAL_DRIVE_SUPPORT)
+      uint16_t motors_disable_time = 0;
+    #endif
+  #endif
+  
+  #ifdef SUPPORT_REAR_LAMP
+    uint16_t rear_lamp_delay = REAR_LAMP_BLINK_PERIOD;
+    HAL_GPIO_WritePin(REAR_LAMP_PORT, REAR_LAMP_PIN, GPIO_PIN_SET);
+  #endif
+
+  #ifdef SUPPORT_ODOMETER
+    HAL_GPIO_WritePin(ODOMETER_PORT, ODOMETER_PIN, GPIO_PIN_SET);
+  #endif
+  
+  powerOn();
+
+  PRINTF("Current:i_max:%i \r\nSpeed: n_max:%i\r\n", rtP_Left.i_max, rtP_Left.n_max);
 
   while(1) {
-    if (buzzerTimer - buzzerTimer_prev > 16*DELAY_IN_MAIN_LOOP) {   // 1 ms = 16 ticks buzzerTimer
+    if (buzzerTimer - buzzerTimer_prev > 16 * DELAY_IN_MAIN_LOOP) {   // 1 ms = 16 ticks buzzerTimer
 
     readCommand();                        // Read Command: input1[inIdx].cmd, input2[inIdx].cmd
     calcAvgSpeed();                       // Calculate average measured speed: speedAvg, speedAvgAbs
 
     #ifndef VARIANT_TRANSPOTTER
-      // ####### MOTOR ENABLING: Only if the initial input is very small (for SAFETY) #######
-      if (enable == 0 && (!rtY_Left.z_errCode && !rtY_Right.z_errCode) && (input1[inIdx].cmd > -50 && input1[inIdx].cmd < 50) && (input2[inIdx].cmd > -50 && input2[inIdx].cmd < 50)){
-        beepShort(6);                     // make 2 beeps indicating the motor enable
-        beepShort(4); HAL_Delay(100);
-        steerFixdt = speedFixdt = 0;      // reset filters
-        enable = 1;                       // enable motors
-        #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
-        printf("-- Motors enabled --\r\n");
-        #endif
-      }
+
+      #if !defined(REVERSE_DRIVE_SWITCH) || !defined(FORWARD_DRIVE_SWITCH)
+        motorsEnable();
+      #endif
 
       // ####### VARIANT_HOVERCAR #######
       #if defined(VARIANT_HOVERCAR) || defined(VARIANT_SKATEBOARD) || defined(ELECTRIC_BRAKE_ENABLE)
@@ -232,25 +335,85 @@ int main(void) {
         speedBlend = (uint16_t)(((CLAMP(speedAvgAbs,10,60) - 10) << 15) / 50); // speedBlend [0,1] is within [10 rpm, 60rpm]
       #endif
 
-      #ifdef STANDSTILL_HOLD_ENABLE
-        standstillHold();                                           // Apply Standstill Hold functionality. Only available and makes sense for VOLTAGE or TORQUE Mode
-      #endif
-
       #ifdef VARIANT_HOVERCAR
-      if (inIdx == CONTROL_ADC) {                                   // Only use use implementation below if pedals are in use (ADC input)
-        if (speedAvgAbs < 60) {                                     // Check if Hovercar is physically close to standstill to enable Double tap detection on Brake pedal for Reverse functionality
-          multipleTapDet(input1[inIdx].cmd, HAL_GetTick(), &MultipleTapBrake); // Brake pedal in this case is "input1" variable
+      // all additional features can be activated on low speeds only
+      if (speedAvgAbs < STANDSTILL_SPEED_THRESHOLD) {
+        if (inIdx == CONTROL_ADC && input1[inIdx].typ != 0) {  // Only use use implementation below if pedals are in use (ADC input)
+          #if defined(REVERSE_DRIVE_MULTI_BRAKE_TAP)
+            multipleTapDet(input1[inIdx].cmd, HAL_GetTick(), &MultipleTapBrake); // Brake pedal in this case is "input1" variable
+          #endif
+          if (input1[inIdx].cmd > BRAKE_THRESHOLD) { 
+            // If Brake pedal (input1) is pressed, bring to 0 also the Throttle pedal (input2) to avoid "Double pedal" driving
+            input2[inIdx].cmd = (int16_t)((input2[inIdx].cmd * speedBlend) >> 15);
+            #ifdef CRUISE_CONTROL_SUPPORT
+              cruiseControl((uint8_t)rtP_Left.b_cruiseCtrlEna);         // Cruise control deactivated by Brake pedal if it was active
+            #endif
+          }
         }
+        #if defined(REVERSE_DRIVE_SWITCH) && !defined(REVERSE_DRIVE_MULTI_BRAKE_TAP)
+        if (input1[inIdx].raw > REVERSE_ADC_LEVEL - 250) {
+          if (reverse_btn_hold_time >= REVERSE_ENABLE_DELAY) {
+            MultipleTapBrake.b_multipleTap = true;
+            motorsEnable();
+          } else {
+            reverse_btn_hold_time++;
+          }
+        } else {
+          reverse_btn_hold_time = 0;
+        }
+        #endif
 
-        if (input1[inIdx].cmd > 30) {                               // If Brake pedal (input1) is pressed, bring to 0 also the Throttle pedal (input2) to avoid "Double pedal" driving
-          input2[inIdx].cmd = (int16_t)((input2[inIdx].cmd * speedBlend) >> 15);
-          cruiseControl((uint8_t)rtP_Left.b_cruiseCtrlEna);         // Cruise control deactivated by Brake pedal if it was active
+        #if defined(FORWARD_DRIVE_SWITCH)
+        if ((input1[inIdx].raw > FORWARD_ADC_LEVEL - 250) && (input1[inIdx].raw < FORWARD_ADC_LEVEL + 250)) {
+          if (forward_btn_hold_time >= FORWARD_ENABLE_DELAY) {
+            MultipleTapBrake.b_multipleTap = false;
+            motorsEnable();
+          } else {
+            forward_btn_hold_time ++;
+          }
+        } else {
+          forward_btn_hold_time = 0;
         }
-      }
+        #endif
+
+        #if (defined(FORWARD_DRIVE_SWITCH) || defined(REVERSE_DRIVE_SWITCH)) && defined (NEUTRAL_DRIVE_SUPPORT)
+        if (!forward_btn_hold_time && !reverse_btn_hold_time) {
+          if (motors_disable_time >= NEUTRAL_ENABLE_DELAY) {
+            MultipleTapBrake.b_multipleTap = false;
+            motorsDisable();
+          }
+          else {
+            motors_disable_time ++;
+          }
+        } else {
+          motors_disable_time = 0;
+        }
+        #endif
+
+        #ifdef SUPPORT_REAR_LAMP
+        HAL_GPIO_WritePin(REAR_LAMP_PORT, REAR_LAMP_PIN, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
+        rear_lamp_delay = REAR_LAMP_BLINK_PERIOD;
+        #endif
+      } else {
+      #ifdef SUPPORT_REAR_LAMP
+        if (rear_lamp_delay > 0) {
+          if (!--rear_lamp_delay) {
+            HAL_GPIO_TogglePin(REAR_LAMP_PORT, REAR_LAMP_PIN);
+            HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+            rear_lamp_delay = REAR_LAMP_BLINK_PERIOD;
+          }
+        }
       #endif
+      }
+      #endif // VARIANT_HOVERCAR
 
       #ifdef ELECTRIC_BRAKE_ENABLE
         electricBrake(speedBlend, MultipleTapBrake.b_multipleTap);  // Apply Electric Brake. Only available and makes sense for TORQUE Mode
+      #endif
+
+      #ifdef STANDSTILL_HOLD_ENABLE
+        standstillHold();                                           // Apply Standstill Hold functionality. Only available and makes sense for VOLTAGE or TORQUE Mode
       #endif
 
       #ifdef VARIANT_HOVERCAR
@@ -287,7 +450,7 @@ int main(void) {
         if (!MultipleTapBrake.b_multipleTap) {  // Check driving direction
           speed = steer + speed;                // Forward driving: in this case steer = Brake, speed = Throttle
         } else {
-          speed = steer - speed;                // Reverse driving: in this case steer = Brake, speed = Throttle
+          speed = LIMIT((steer - speed), REVERSE_SPEED_LIMIT);          // Reverse driving: in this case steer = Brake, speed = Throttle
         }
         steer = 0;                              // Do not apply steering to avoid side effects if STEER_COEFFICIENT is NOT 0
       }
@@ -370,7 +533,7 @@ int main(void) {
           LCD_SetLocation(&lcd, 0, 0); LCD_WriteString(&lcd, "Emergency Off!");
           LCD_SetLocation(&lcd, 0, 1); LCD_WriteString(&lcd, "Keeper too fast.");
         #endif
-        poweroff();
+        powerOff();
       }
 
       #ifdef SUPPORT_NUNCHUK
@@ -437,7 +600,7 @@ int main(void) {
         #if defined(DEBUG_SERIAL_PROTOCOL)
           process_debug();
         #else
-          printf("in1:%i in2:%i cmdL:%i cmdR:%i BatADC:%i BatV:%i TempADC:%i Temp:%i\r\n",
+          PRINTF("in1:%i in2:%i cmdL:%i cmdR:%i BatADC:%i BatV:%i TempADC:%i Temp:%i\r\n",
             input1[inIdx].raw,        // 1: INPUT1
             input2[inIdx].raw,        // 2: INPUT2
             cmdL,                     // 3: output command: [-1000, 1000]
@@ -483,12 +646,33 @@ int main(void) {
     #endif
 
     // ####### POWEROFF BY POWER-BUTTON #######
-    poweroffPressCheck();
+    powerOffPressCheck();
 
     // ####### BEEP AND EMERGENCY POWEROFF #######
-    if ((TEMP_POWEROFF_ENABLE && board_temp_deg_c >= TEMP_POWEROFF && speedAvgAbs < 20) || (batVoltage < BAT_DEAD && speedAvgAbs < 20)) {  // poweroff before mainboard burns OR low bat 3
-      poweroff();
-    } else if (rtY_Left.z_errCode || rtY_Right.z_errCode) {                                           // 1 beep (low pitch): Motor error, disable motors
+    if (TEMP_POWEROFF_ENABLE && board_temp_deg_c >= TEMP_POWEROFF) 
+    {  // powerOff before mainboard burns OR low bat 3
+      if (speedAvgAbs < 5)
+      {
+        powerOff();
+      }
+      else
+      {
+        slowDown();
+      }
+    }
+    else if (batVoltage < BAT_DEAD)
+    {
+      if (speedAvgAbs < 5)
+      {
+        powerOff();
+      }
+      else
+      {
+         slowDown();
+      }
+    }
+   
+    else if (rtY_Left.z_errCode || rtY_Right.z_errCode) {                                           // 1 beep (low pitch): Motor error, disable motors
       enable = 0;
       beepCount(1, 24, 1);
     } else if (timeoutFlgADC) {                                                                       // 2 beeps (low pitch): ADC timeout
@@ -519,7 +703,7 @@ int main(void) {
       inactivity_timeout_counter++;
     }
     if (inactivity_timeout_counter > (INACTIVITY_TIMEOUT * 60 * 1000) / (DELAY_IN_MAIN_LOOP + 1)) {  // rest of main loop needs maybe 1ms
-      poweroff();
+      powerOff();
     }
 
 

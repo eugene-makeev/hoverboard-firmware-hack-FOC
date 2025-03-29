@@ -423,6 +423,15 @@ void MX_GPIO_Init(void) {
   GPIO_InitStruct.Pin = OFF_PIN;
   HAL_GPIO_Init(OFF_PORT, &GPIO_InitStruct);
 
+#ifdef SUPPORT_REAR_LAMP
+  GPIO_InitStruct.Pin = REAR_LAMP_PIN;
+  HAL_GPIO_Init(REAR_LAMP_PORT, &GPIO_InitStruct);
+#endif
+
+#ifdef SUPPORT_ODOMETER
+  GPIO_InitStruct.Pin = ODOMETER_PIN;
+  HAL_GPIO_Init(ODOMETER_PORT, &GPIO_InitStruct);
+#endif
 
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
 

@@ -86,6 +86,7 @@ void standstillHold(void);
 void electricBrake(uint16_t speedBlend, uint8_t reverseDir);
 void cruiseControl(uint8_t button);
 int  checkInputType(int16_t min, int16_t mid, int16_t max);
+void calibrate(void);
 
 // Input Functions
 void calcInputCmd(InputStruct *in, int16_t out_min, int16_t out_max);
@@ -110,8 +111,8 @@ void sideboardSensors(uint8_t sensors);
 
 // Poweroff Functions
 void saveConfig(void);
-void poweroff(void);
-void poweroffPressCheck(void);
+void powerOff(void);
+void powerOffPressCheck(void);
 
 // Filtering Functions
 void filtLowPass32(int32_t u, uint16_t coef, int32_t *y);
