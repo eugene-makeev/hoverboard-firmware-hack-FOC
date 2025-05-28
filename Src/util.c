@@ -434,6 +434,16 @@ void beepLong(uint8_t freq) {
     buzzerFreq = 0;
 }
 
+void beepLongMany(uint8_t freq, uint16_t duration, uint8_t count) {
+    buzzerCount = 0;  // prevent interraction with beep counter
+    for (uint8_t i = 0; i < count; i++) {
+      buzzerFreq = freq;
+      HAL_Delay(duration);
+      buzzerFreq = 0;
+      HAL_Delay(300);
+    }
+}
+
 void beepShort(uint8_t freq) {
     buzzerCount = 0;  // prevent interraction with beep counter
     buzzerFreq = freq;
@@ -1563,9 +1573,9 @@ void calibrate(void)
   // disable motors
   enable = 0;
 
-  // if short press within 1 second from entering calibrate mode, then calibrate speed and torque
+  // if short press within 1 second from entering calibrate mode, min-max values
   while (!HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) 
-    && wait_for_press++ < CALIBRARE_SPD_CHECK_TIME) 
+    && wait_for_press++ < CALIBRARE_MINMAX_CHECK_TIME) 
   {
      HAL_Delay(WAIT_DELAY);
   }
@@ -1573,23 +1583,21 @@ void calibrate(void)
   // wait untill release
   while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) { HAL_Delay(WAIT_DELAY); }
 
-  if (wait_for_press < CALIBRARE_SPD_CHECK_TIME) 
-  {
-    // Double press: Adjust Max Current, Max Speed
-    beepLong(8);
-    HAL_Delay(BEEP_DELAY);
-    beepLong(8);
-    updateCurSpdLim();
-    beepShort(5); 
-  } 
-  else 
+  if (wait_for_press < CALIBRARE_MINMAX_CHECK_TIME) 
   {
     // calibrate min-max values
     #ifdef AUTO_CALIBRATION_ENA
-    beepLong(8); 
+    beepLongMany(8, 500, 3);
+
     adcCalibLim();
     beepShort(5);
     #endif
+  } 
+  else 
+  {
+    beepLong(8);
+    updateCurSpdLim();
+    beepShort(5); 
   }
 }  
 

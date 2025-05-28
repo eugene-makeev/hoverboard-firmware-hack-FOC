@@ -162,64 +162,115 @@ static uint32_t    buzzerTimer_prev = 0;
 static uint32_t    inactivity_timeout_counter;
 static MultipleTap MultipleTapBrake;    // define multiple tap functionality for the Brake pedal
 
+#ifdef VARIANT_HOVERCAR
+boolean_T isThrottleMax(void)
+{
+  readCommand();
+
+  if ((input2[inIdx].raw > input2[inIdx].max - 250) && (input2[inIdx].raw < input2[inIdx].max + 250)) { 
+    return true;
+  }
+  return false;
+}
+
+boolean_T isThrottleMin(void)
+{
+  readCommand();
+
+  if ((input2[inIdx].raw > input2[inIdx].min - 250) && (input2[inIdx].raw < input2[inIdx].min + 250)) { 
+    return true;
+  }
+  return false;
+}
+#endif
+
 void powerOn(void)
 {
   poweronMelody();
   HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
-  
+
+// this part is for calibration, if no condition meet, then just regular poweron procedure is run
+// for entering calibration mode:
+// 1. set and hold throttle position to maximum
+// 2. power button toggle (on and off) twice within KEYLOCK_CHECK_TIME (1 sec) interval
+// 3. toggle (on and off) power button with delay CALIBRATE_HOLD_TIME (5 sec)
+// 4. release power button
+// 5. Release throttle
+// 6. one long beep - calibrate current and speed mode entered
+// 7. calibrate current holding throttle to next step
+// 8. short toggle power button (or wait for 10 sec)
+// 9. one long beep - calibrate speed and holding throttle to next step
+// 10. short toggle power button
+// 11. power off
+
+// to calibrate min/max
+// 6. after step 5 above, short toggle of power button within 1 second
+// 7. three long beeps - MIN/MAX calibration mode entered
+// 8. calibrate throttle handle by rotation, calibrate switch handle by switching left-right
+// 9. short toggle of power button
+// 10. power off
+
 #ifdef KEYLOCK_POWER_SWITCH
-  uint16_t power_btn_hold_time = 0;
 
-  // power on button short press
-  while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) 
-    && power_btn_hold_time++ < KEYLOCK_CHECK_TIME) 
-  { 
-    HAL_Delay(WAIT_DELAY); 
-  }
-
-  // check for first short press
-  if (power_btn_hold_time < KEYLOCK_CHECK_TIME) 
+  if (isThrottleMax())
   {
-    power_btn_hold_time = 0;
+    uint16_t power_btn_hold_time = 0;
+
+    // power on button short press
     while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) 
       && power_btn_hold_time++ < KEYLOCK_CHECK_TIME) 
     { 
       HAL_Delay(WAIT_DELAY); 
     }
 
-    // second short press
-    if (power_btn_hold_time < KEYLOCK_CHECK_TIME) 
+    // check for first short press
+    if ((power_btn_hold_time < KEYLOCK_CHECK_TIME) && isThrottleMax()) 
     {
-      uint16_t calibrate_timeout = 0;
-      PRINTF("calibrate mode, press power button for more than 5 sec\r\n");
-      while (true) 
-      {
-        power_btn_hold_time = 0;
-        // check for long press
-        while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) 
-        {
-          HAL_Delay(WAIT_DELAY);
-          if (power_btn_hold_time++ == CALIBRATE_HOLD_TIME) { beepShort(5); }
-        }
-        if (power_btn_hold_time >= CALIBRATE_HOLD_TIME) 
-        {        
-          calibrate();
-          powerOff(); 
-        }
-        else if (power_btn_hold_time > PWR_BTN_DEBOUNCE) 
-        { 
-          // Short press: power off (80 ms debounce)
-          powerOff();  
-        }
+      power_btn_hold_time = 0;
+      while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN) 
+        && power_btn_hold_time++ < KEYLOCK_CHECK_TIME) 
+      { 
+        HAL_Delay(WAIT_DELAY); 
+      }
 
-        if (calibrate_timeout++ > CALIBRATE_MOD_IMEOUT_TIME) 
+      // second short press
+      if ((power_btn_hold_time < KEYLOCK_CHECK_TIME) && isThrottleMax()) 
+      {
+        uint16_t calibrate_timeout = 0;
+        PRINTF("calibrate mode, press power button for more than 5 sec\r\n");
+        while (true) 
         {
-          // timout for calibration
-          PRINTF("Calibrate mode timeout\r\n");
-          break;
+          power_btn_hold_time = 0;
+          // check for >=5 sec press, wait until release
+          while (HAL_GPIO_ReadPin(BUTTON_PORT, BUTTON_PIN)) 
+          {
+            HAL_Delay(WAIT_DELAY);
+            if (power_btn_hold_time++ == CALIBRATE_HOLD_TIME) { beepShort(5); }
+          }
+
+          if (power_btn_hold_time >= CALIBRATE_HOLD_TIME) 
+          {
+            // wait untill throttle is released
+            while (!(isThrottleMin())) {HAL_Delay(WAIT_DELAY);}
+
+            calibrate();
+            powerOff(); 
+          }
+          else if (power_btn_hold_time > PWR_BTN_DEBOUNCE) 
+          { 
+            // Short press: power off (80 ms debounce)
+            powerOff();  
+          }
+
+          if (calibrate_timeout++ > CALIBRATE_MOD_IMEOUT_TIME) 
+          {
+            // timout for calibration
+            PRINTF("Calibrate mode timeout\r\n");
+            break;
+          }
+
+          HAL_Delay(WAIT_DELAY);
         }
-        
-        HAL_Delay(WAIT_DELAY);
       }
     }
   }
@@ -254,6 +305,15 @@ void motorsDisable(void)
   }
 }
 
+uint8_t slow_down_coeff = 100; // 100% speed
+// every call slowing down by 10%
+void slowDown(void)
+{
+  if (slow_down_coeff > 0)
+  {
+    slow_down_coeff-=1;
+  }
+}
 
 int main(void) {
 
@@ -310,7 +370,7 @@ int main(void) {
   #endif
 
   #ifdef SUPPORT_ODOMETER
-    HAL_GPIO_WritePin(ODOMETER_PORT, ODOMETER_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(ODOMETER_PORT, ODOMETER_PIN, GPIO_PIN_RESET);
   #endif
   
   powerOn();
@@ -455,6 +515,9 @@ int main(void) {
         steer = 0;                              // Do not apply steering to avoid side effects if STEER_COEFFICIENT is NOT 0
       }
       #endif
+
+      // slowing down for high temp or low battery
+      speed = (speed * slow_down_coeff) / 100;
 
       // ####### MIXER #######
       // cmdR = CLAMP((int)(speed * SPEED_COEFFICIENT -  steer * STEER_COEFFICIENT), INPUT_MIN, INPUT_MAX);

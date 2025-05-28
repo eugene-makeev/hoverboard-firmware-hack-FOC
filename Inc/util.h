@@ -77,6 +77,7 @@ void UART_DisableRxErrors(UART_HandleTypeDef *huart);
 void poweronMelody(void);
 void beepCount(uint8_t cnt, uint8_t freq, uint8_t pattern);
 void beepLong(uint8_t freq);
+void beepLongMany(uint8_t freq, uint16_t duration, uint8_t count);
 void beepShort(uint8_t freq);
 void beepShortMany(uint8_t cnt, int8_t dir);
 void calcAvgSpeed(void);

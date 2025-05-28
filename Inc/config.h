@@ -83,8 +83,8 @@
 #define BAT_LVL4                (380 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // Yellow:       no beep
 #define BAT_LVL3                (365 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // Yellow blink: no beep 
 #define BAT_LVL2                (350 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // Red:          gently beep at this voltage level. [V*100/cell]. In this case 3.60 V/cell
-#define BAT_LVL1                (335 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // Red blink:    fast beep. Your battery is almost empty. Charge now! [V*100/cell]. In this case 3.50 V/cell
-#define BAT_DEAD                (320 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // All leds off: undervoltage powerOff. (while not driving) [V*100/cell]. In this case 3.37 V/cell
+#define BAT_LVL1                (325 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // Red blink:    fast beep. Your battery is almost empty. Charge now! [V*100/cell]. In this case 3.50 V/cell
+#define BAT_DEAD                (300 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE    // All leds off: undervoltage powerOff. (while not driving) [V*100/cell]. In this case 3.37 V/cell
 // ######################## END OF BATTERY ###############################
 
 
@@ -263,7 +263,7 @@
 #define BEEP_DELAY  (100)
 #define CALIBRATE_HOLD_TIME (5 * 1000 / WAIT_DELAY)
 #define KEYLOCK_CHECK_TIME  (1 * 1000 / WAIT_DELAY)
-#define CALIBRARE_SPD_CHECK_TIME  (1 * 1000 / WAIT_DELAY)
+#define CALIBRARE_MINMAX_CHECK_TIME  (1 * 1000 / WAIT_DELAY)
 #define CALIBRATE_MOD_IMEOUT_TIME (15 * 1000 / WAIT_DELAY) // 10 seconds for entering calibration mode
 #define PWR_BTN_DEBOUNCE (8)
 
@@ -502,7 +502,7 @@
 
 
 // ############################ VARIANT_HOVERCAR SETTINGS ############################
-#ifdef VARIANT_HOVERCAR
+#ifdef VARIANT_HOVERCAR // THIS IS USED FOR TRICYCLE
   #define FLASH_WRITE_KEY         0x1107  // Flash memory writing key. Change this key to ignore the input calibrations from the flash memory and use the ones in config.h
   #define CONTROL_ADC             0         // use ADC as input. Number indicates priority for dual-input. Disable CONTROL_SERIAL_USART2, FEEDBACK_SERIAL_USART2, DEBUG_SERIAL_USART2!
   //#define SIDEBOARD_SERIAL_USART3 1         // Rx from right sensor board: to use photosensors as buttons. Number indicates priority for dual-input. Comment-out if sideboard is not used!
@@ -520,6 +520,7 @@
   // #define ADC_ALTERNATE_CONNECT             // use to swap ADC inputs
   // #define INVERT_R_DIRECTION                // Invert rotation of right motor
   // #define INVERT_L_DIRECTION                // Invert rotation of left motor
+  // uncomment this to see UART output, baudrate is 115200. This pins are also reused by REAR_LAMP, so could not be used simultaneously
   // #define DEBUG_SERIAL_USART3               // right sensor board cable, disable if I2C (nunchuk or lcd) is used!
 
   //*********************************** Extra functionality ******************************************
@@ -561,7 +562,12 @@
 //Current:i_max:6185
 //Speed: n_max:1516
 
-#define SUPPORT_REAR_LAMP
+#if defined DEBUG_SERIAL_USART3
+  #undef SUPPORT_REAR_LAMP
+#else
+  #define SUPPORT_REAR_LAMP
+#endif
+
 #define REAR_LAMP_BLINK_PERIOD (1 * 250 / DELAY_IN_MAIN_LOOP)
 #define SUPPORT_ODOMETER
 
